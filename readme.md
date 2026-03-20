@@ -75,7 +75,7 @@ graph TD
 
 4. **Start the API:**
    ```bash
-   uvicorn app.main:app --reload --port 8000
+   uvicorn main:app --reload --port 8000
    ```
 
 ---
@@ -106,5 +106,5 @@ This project is for educational and research purposes only. The developers are n
 
 ---
 <div align="center">
-  Built with 💙 for the Videasy Ecosystem.
+  Built by Walter.
 </div>
