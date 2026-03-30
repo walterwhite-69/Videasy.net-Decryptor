@@ -62,7 +62,7 @@ async function decrypt(ciphertextHex, tmdbId) {
 
   serveCode = serveCode.replace(/_0x24\(\),_0x36\(/g, '_0x36(');
 
-  const fakeWindow = { location: { hostname: "cineby.gd", href: "https://cineby.gd/" } };
+  const fakeWindow = { location: { hostname: "cineby.sc", href: "https://cineby.sc/" } };
   const fn = new Function("window", "crypto", "TextEncoder", serveCode);
   fn(fakeWindow, webcrypto, TextEncoder);
   
