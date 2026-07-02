@@ -1,6 +1,7 @@
 import json
 import os
 import subprocess
+import tempfile
 from typing import Any
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode
@@ -43,19 +44,33 @@ def _fetch_cipher(provider_endpoint: str, params: dict) -> str:
 
 
 def _node_decrypt(cipher_hex: str, tmdb_id: str) -> dict:
-    result = subprocess.run(
-        ["node", "decrypt.js", cipher_hex, tmdb_id],
-        capture_output=True,
-        text=True,
-        timeout=30,
-        cwd=SCRIPT_DIR,
-    )
-    if result.returncode != 0:
-        raise RuntimeError(f"Node exited {result.returncode}: {result.stderr.strip()}")
-    out = json.loads(result.stdout)
-    if not out.get("success"):
-        raise RuntimeError(out.get("error", "unknown decryption error"))
-    return out["data"]
+    # Write the ciphertext to a temp file instead of passing it as a CLI
+    # argument — Windows caps command-line length and large payloads
+    # (now ~50KB+ per the new API) will exceed it (WinError 206).
+    tmp_path = None
+    try:
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".txt", delete=False, encoding="utf-8") as f:
+            f.write(cipher_hex)
+            tmp_path = f.name
+
+        result = subprocess.run(
+            ["node", "--max-old-space-size=4096", "decrypt.js", tmp_path, tmdb_id],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=30,
+            cwd=SCRIPT_DIR,
+        )
+        if result.returncode != 0:
+            raise RuntimeError(f"Node exited {result.returncode}: {result.stderr.strip()}")
+        out = json.loads(result.stdout)
+        if not out.get("success"):
+            raise RuntimeError(out.get("error", "unknown decryption error"))
+        return out["data"]
+    finally:
+        if tmp_path and os.path.exists(tmp_path):
+            os.unlink(tmp_path)
 
 
 def _get_sources(query_params: dict, provider_name: str | None = None) -> dict:
@@ -80,7 +95,7 @@ def _get_sources(query_params: dict, provider_name: str | None = None) -> dict:
             errors.append(f"{p['name']}: connection error — {e.reason}")
         except subprocess.TimeoutExpired:
             errors.append(f"{p['name']}: decrypt timed out")
-        except (RuntimeError, json.JSONDecodeError, ValueError) as e:
+        except (RuntimeError, json.JSONDecodeError, ValueError, TypeError) as e:
             errors.append(f"{p['name']}: {e}")
 
     raise HTTPException(
@@ -258,7 +273,7 @@ def get_sources(
     episodeId: str = Query(default="1"),
     seasonId:  str = Query(default="1"),
     imdbId:    str = Query(default=""),
-) -> dict[str, Any]:
+):
     query_params = {
         "title":     title,
         "mediaType": mediaType,
@@ -277,7 +292,7 @@ def get_sources(
 
 
 @app.get("/providers")
-def list_providers() -> dict[str, Any]:
+def list_providers():
     return {
         "providers": [
             {"name": p["name"], "endpoint": p["endpoint"], "active": p["active"]}
